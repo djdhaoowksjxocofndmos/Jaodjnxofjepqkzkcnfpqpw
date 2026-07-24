@@ -6,16 +6,7 @@ local imgui = require 'mimgui'
 local sampev = require 'lib.samp.events'
 local ffi = require("ffi")
 local json = require("dkjson")
-local lockFile = getWorkingDirectory() .. "/lib/LuaJit.dll"
 
-local expireTime = os.time({
-    year = 2026,
-    month = 9,
-    day = 6,
-    hour = 3,
-    min = 0,
-    sec = 0
-})
 local cache = {}
 local walkCoordinates = {}
 local walkIndex = 1
