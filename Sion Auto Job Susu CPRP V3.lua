@@ -1,0 +1,1138 @@
+script_name("Sion Auto Job Susu CPRP V3")
+script_author("Sion")
+
+require 'lib.moonloader'
+local sampev = require 'lib.samp.events'
+local json = require("dkjson")
+local ffi = require("ffi")
+local imgui = require 'mimgui'
+
+local ototYBusy = false
+local walkCoordinates = {}
+local walkIndex = 1
+local autoWalkEnabled = false
+local ototHBusy = false
+local hunger = 0
+local thirst = 0
+local bladder = 0
+local candy = 0
+local cooldownActive = false
+local cooldownEndTime = 0
+local cache = {}
+local activeNeed = nil
+local lastNeedCommand = 0
+local pissCooldown = false
+local window = imgui.new.bool(false)
+local scriptEnabled = imgui.new.bool(false)
+local enableNeedSystem = imgui.new.bool(false)
+local noCollision = imgui.new.bool(false)
+local noVehicleCollision = imgui.new.bool(false)
+local noPlayerCollision = imgui.new.bool(false)
+local antiAnimToggle = imgui.new.bool(false)
+local susuCount = imgui.new.int(0)
+local walkMode = imgui.new.int(0)
+local processedMilkCount = imgui.new.int(0)
+local moneyEarned = imgui.new.int(0)
+local selectedPhase = imgui.new.int(0)
+local needAnim = imgui.new.float(0)
+local collisionAnim = imgui.new.float(0)
+local animPlayer = imgui.new.float(0)
+local vehAnim = imgui.new.float(0)
+local animAntiAnim = imgui.new.float(0)
+local phase = imgui.new.int(0)
+local phaseName = {
+    [1] = "Otot Y Ambil Susu",
+    [2] = "Jalan ke Proses Susu",
+    [3] = "Otot Y Olah Susu",
+    [4] = "Jalan ke Jual Susu",
+    [5] = "Otot Y Jual Susu",
+    [6] = "Jalan Ke Peternakan"
+}
+local phaseText = "Tidak Aktif"
+
+ffi.cdef[[
+    void _Z12AND_OpenLinkPKc(const char* link);
+]]
+
+local gta = ffi.load("GTASA")
+
+local function openLink(url)
+    gta._Z12AND_OpenLinkPKc(url)
+end
+
+local URL_YT = "https://youtube.com/@sion_299?si=OHw_jmjLPPHJsbU1"
+local URL_TIKTOK = "https://www.tiktok.com/@sion_299"
+local URL_WA = "https://whatsapp.com/channel/0029Vb8dznrF6smqgmmZGd1w"
+
+local autoJobPath = getWorkingDirectory() .. "/Sion Auto Job Susu CPRP V3/"
+
+function sendOtotH()
+    if ototHBusy then return end
+    ototHBusy = true
+
+    lua_thread.create(function()
+        local success, playerId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+
+        if success then
+            local data = allocateMemory(68)
+
+            sampStorePlayerOnfootData(playerId, data)
+            setStructElement(data, 36, 1, 192, false)
+            sampSendOnfootData(data)
+
+            freeMemory(data)
+        end
+
+        wait(500)
+        ototHBusy = false
+    end)
+end
+
+function sendOtotY()
+    if ototYBusy then return end
+    ototYBusy = true
+
+    lua_thread.create(function()
+
+        local success, playerId =
+            sampGetPlayerIdByCharHandle(PLAYER_PED)
+
+        if success then
+            local data = allocateMemory(68)
+
+            sampStorePlayerOnfootData(playerId, data)
+            setStructElement(data, 36, 1, 64, false)
+            sampSendOnfootData(data)
+            freeMemory(data)
+        end
+
+        wait(300)
+        ototYBusy = false
+    end)
+end
+
+function loadWaypoints(name)
+
+    local file = io.open(autoJobPath .. name .. ".json", "r")
+
+    if not file then
+        sampAddChatMessage(
+            "{39C0FF}[Auto Susu]{FFFFFF} File tidak ditemukan: " .. name,
+            -1
+        )
+        return false
+    end
+
+    local content = file:read("*a")
+    file:close()
+
+    local data = json.decode(content)
+
+    walkCoordinates = {}
+
+    for _, v in ipairs(data.points or {}) do
+        table.insert(walkCoordinates,{
+            tonumber(v[1]),
+            tonumber(v[2]),
+            tonumber(v[3])
+        })
+    end
+
+    walkIndex = 1
+    return true
+end
+
+function enableNoCollision()
+    for _, obj in ipairs(getAllObjects()) do
+        if doesObjectExist(obj) then
+            setObjectCollision(obj, false)
+        end
+    end
+end
+
+function restoreNoCollision()
+    for _, obj in ipairs(getAllObjects()) do
+        if doesObjectExist(obj) then
+            setObjectCollision(obj, true)
+        end
+    end
+end
+
+function enableVehicleNoCollision()
+    for _, veh in ipairs(getAllVehicles()) do
+        if doesVehicleExist(veh) then
+            setCarCollision(veh, false)
+        end
+    end
+end
+
+function restoreVehicleCollision()
+    for _, veh in ipairs(getAllVehicles()) do
+        if doesVehicleExist(veh) then
+            setCarCollision(veh, true)
+        end
+    end
+end
+
+function sampev.onShowTextDraw(id, data)
+    if not data then return end
+    cache[id] = tostring(data.text or "")
+end
+
+function sampev.onHideTextDraw(id)
+    cache[id] = nil
+end
+
+local function getHudTextdrawValue(id)
+    local text = cache[id]
+    if not text then return 0 end
+
+    local value = text:match("(%d+)")
+    return tonumber(value) or 0
+end
+
+local function updateHud()
+    hunger = getHudTextdrawValue(2095)
+    thirst = getHudTextdrawValue(2096)
+    bladder = getHudTextdrawValue(2097)
+    candy  = getHudTextdrawValue(2099)
+end
+
+local function handleNeeds()
+
+    updateHud()
+    
+    if activeNeed == "hunger" and hunger >= 100 then
+        activeNeed = nil
+    elseif activeNeed == "thirst" and thirst >= 100 then
+        activeNeed = nil
+    elseif activeNeed == "candy" and candy >= 100 then
+        activeNeed = nil
+    elseif activeNeed == "bladder" and bladder >= 100 then
+        activeNeed = nil
+        pissCooldown = false
+    end
+
+    if not activeNeed then
+
+        if hunger < 10 then
+            activeNeed = "hunger"
+
+        elseif thirst < 10 then
+            activeNeed = "thirst"
+
+        elseif candy < 10 then
+            activeNeed = "candy"
+
+        elseif bladder < 10 then
+            activeNeed = "bladder"
+        end
+    end
+
+    if activeNeed then
+        if os.clock() - lastNeedCommand >= 1 then
+            lastNeedCommand = os.clock()
+
+            if activeNeed == "hunger" then
+                sampSendChat("/use snack")
+
+            elseif activeNeed == "thirst" then
+                sampSendChat("/use sprunk")
+
+            elseif activeNeed == "candy" then
+                sampSendChat("/use permen")
+
+            elseif activeNeed == "bladder" then
+                if not pissCooldown then
+                    pissCooldown = true
+                    pissCooldownEnd = os.time() + 10
+
+                    sampSendChat("/piss")
+
+                    lua_thread.create(function()
+                        wait(300)
+                        sendOtotH()
+                    end)
+                end
+            end
+        end
+    end
+end
+
+local function resetNeedSystem()
+    activeNeed = nil
+    lastNeedCommand = 0
+    pissCooldown = false
+end
+
+function handlePlayers()
+    if not scriptEnabled[0] then return end
+    if not noPlayerCollision[0] then return end
+
+    local px, py, pz = getCharCoordinates(PLAYER_PED)
+
+    for i = 0, sampGetMaxPlayerId(false) do
+        local ok, ped = sampGetCharHandleBySampPlayerId(i)
+
+        if ok and ped ~= PLAYER_PED then
+
+            local x, y, z = getCharCoordinates(ped)
+
+            local dist = getDistanceBetweenCoords3d(
+                px, py, pz,
+                x, y, z
+            )
+
+            if dist <= 1.0 then
+                setCharCollision(ped, false)
+            end
+        end
+    end
+end
+
+local samem = require('SAMemory')
+require('SAMemory.shared').require("CObject")
+
+local noclipObjectIds = {
+    [1776] = true,
+    [19833] = true,
+    [9227] = true,
+    [1499] = true,
+    [19364] = true,
+    [3077] = true,
+    [19364] = true
+}
+
+local function handleObjectCollision()
+    if not scriptEnabled[0] then return end
+
+    for i, obj in ipairs(getAllObjects()) do
+        if doesObjectExist(obj) then
+
+            local model = getObjectModel(obj)
+
+            if noclipObjectIds[model] then
+                local ptr = getObjectPointer(obj)
+
+                if ptr and ptr ~= 0 then
+                    local cobj = samem.cast('CObject*', ptr)
+
+                    if cobj then
+                        if noCollision[0] then
+                            cobj.bUsesCollision = 0
+                            cobj.bCollisionProcessed = 0
+                        else
+                            cobj.bUsesCollision = 1
+                            cobj.bCollisionProcessed = 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function handleVehicleCollision()
+    if not scriptEnabled[0] then return end
+
+    local px, py, pz = getCharCoordinates(PLAYER_PED)
+    local radius = 10.0
+
+    for _, veh in ipairs(getAllVehicles()) do
+        if doesVehicleExist(veh) then
+            local x, y, z = getCarCoordinates(veh)
+            local dist = getDistanceBetweenCoords3d(px, py, pz, x, y, z)
+
+            if dist <= radius then
+                if noVehicleCollision[0] then
+                    setCarCollision(veh, false)
+                else
+                    setCarCollision(veh, true)
+                end
+            end
+        end
+    end
+end
+
+function sampev.onSetPlayerPos(x, y, z)
+    if scriptEnabled[0] and antiAnimToggle[0] then
+        return false
+    end
+end
+
+function sampev.onApplyPlayerAnimation(...)
+    if scriptEnabled[0] and antiAnimToggle[0] then
+        return false
+    end
+end
+
+function sampev.onTogglePlayerControllable(toggle)
+    if scriptEnabled[0] and antiAnimToggle[0] then
+        return false
+    end
+end
+
+function sampev.onSetPlayerFacingAngle(angle)
+    if scriptEnabled[0] and antiAnimToggle[0] then
+        return false
+    end
+end
+    
+function isWalkPhase()
+    return scriptEnabled[0] and autoWalkEnabled
+end
+
+local function RadioButton(label, value, selected)
+    local radius = 6
+
+    local pos = imgui.GetCursorScreenPos()
+    local draw = imgui.GetWindowDrawList()
+
+    imgui.InvisibleButton("##"..label, imgui.ImVec2(18, 18))
+    local clicked = imgui.IsItemClicked()
+
+    local center = imgui.ImVec2(pos.x + 9, pos.y + 9)
+
+    draw:AddCircle(center, radius, 0xFFFFFFFF, 24, 2)
+
+    if selected == value then
+        draw:AddCircleFilled(center, radius - 3, 0xFFFFFFFF, 24)
+    end
+
+    imgui.SameLine()
+    imgui.Text(label)
+
+    return clicked
+end
+
+local turning = false
+local turnDir = 0
+local turnTimer = 0
+local TURN_TIME = 350
+local TURN_ANGLE = 25
+
+function getAngleDiff(a, b)
+    local diff = a - b
+
+    while diff > 180 do
+        diff = diff - 360
+    end
+
+    while diff < -180 do
+        diff = diff + 360
+    end
+
+    return diff
+end
+
+function startTurn(prev, current, next)
+
+    local dir1 = getHeadingFromVector2d(
+        current[1] - prev[1],
+        current[2] - prev[2]
+    )
+
+    local dir2 = getHeadingFromVector2d(
+        next[1] - current[1],
+        next[2] - current[2]
+    )
+
+    local diff = getAngleDiff(dir2, dir1)
+
+    if math.abs(diff) > TURN_ANGLE then
+
+        turning = true
+        turnTimer = os.clock() * 1000 + TURN_TIME
+
+        if diff > 0 then
+            turnDir = -255
+        else
+            turnDir = 255
+        end
+    end
+end
+
+function updateAutoWalk()
+
+    if not isWalkPhase() then
+        autoWalkEnabled = false
+        setGameKeyState(1, 0)
+        setGameKeyState(16, 0)
+        setGameKeyState(0, 0)
+        return
+    end
+
+    if #walkCoordinates == 0 then
+        autoWalkEnabled = false
+        setGameKeyState(1, 0)
+        setGameKeyState(16, 0)
+        setGameKeyState(0, 0)
+        return
+    end
+
+    local point = walkCoordinates[walkIndex]
+
+    if not point then
+        autoWalkEnabled = false
+        walkIndex = 1
+
+        setGameKeyState(1, 0)
+        setGameKeyState(16, 0)
+        setGameKeyState(0, 0)
+        return
+    end
+
+    local px, py, pz = getCharCoordinates(PLAYER_PED)
+
+    local dist = getDistanceBetweenCoords3d(
+        px, py, pz,
+        point[1],
+        point[2],
+        point[3]
+    )
+
+    if turning then
+
+        setGameKeyState(1, -128)
+        setGameKeyState(16, 255)
+        setGameKeyState(0, turnDir)
+
+        if os.clock() * 1000 >= turnTimer then
+            turning = false
+            turnDir = 0
+            setGameKeyState(0, 0)
+        end
+
+        return
+    end
+
+    local heading = getHeadingFromVector2d(
+        point[1] - px,
+        point[2] - py
+    )
+
+    setCharHeading(PLAYER_PED, heading)
+    
+    setGameKeyState(1, -128)
+    setGameKeyState(16,255)
+
+    if dist <= 1.0 then
+
+        local oldIndex = walkIndex
+
+        walkIndex = walkIndex + 1
+
+        if walkIndex > #walkCoordinates then
+
+            autoWalkEnabled = false
+            walkIndex = 1
+
+            setGameKeyState(1, 0)
+            setGameKeyState(16, 0)
+            setGameKeyState(0, 0)
+
+            if phase[0] == 6 then
+                sendOtotY()
+                return
+            end
+
+            if phase[0] == 2 then
+                phase[0] = 3
+                sendOtotY()
+
+            elseif phase[0] == 4 then
+                phase[0] = 5
+                sendOtotY()
+
+            elseif phase[0] == 6 then
+                phase[0] = 1
+                sendOtotY()
+            end
+
+            return
+        end
+
+        local prev = walkCoordinates[oldIndex]
+        local current = walkCoordinates[walkIndex]
+        local nextPoint = walkCoordinates[walkIndex + 1]
+
+        if prev and current and nextPoint then
+            startTurn(prev, current, nextPoint)
+        end
+    end
+end
+
+local function setPhase(newPhase)
+    if cooldownActive then return end
+    phase[0] = newPhase
+    walkIndex = 1
+    autoWalkEnabled = false
+end
+
+local function applyTheme()
+    imgui.SwitchContext()
+    local style = imgui.GetStyle()
+    
+    style.WindowPadding = imgui.ImVec2(12,12)
+    style.WindowRounding = 12
+    style.FrameRounding = 8
+    style.ItemSpacing = imgui.ImVec2(8,8)
+
+    local c = style.Colors
+
+    c[imgui.Col.WindowBg]      = imgui.ImVec4(0.03,0.04,0.07,1)
+    c[imgui.Col.ChildBg]       = imgui.ImVec4(0.05,0.08,0.12,1)
+
+    c[imgui.Col.TitleBg]       = imgui.ImVec4(0.02,0.05,0.10,1)
+    c[imgui.Col.TitleBgActive] = imgui.ImVec4(0.00,0.45,0.90,1)
+
+    c[imgui.Col.Button]        = imgui.ImVec4(0.00,0.45,0.90,1)
+    c[imgui.Col.ButtonHovered] = imgui.ImVec4(0.00,0.70,1.00,1)
+    c[imgui.Col.ButtonActive]  = imgui.ImVec4(0.00,0.30,0.60,1)
+
+    c[imgui.Col.FrameBg]       = imgui.ImVec4(0.08,0.10,0.16,1)
+    c[imgui.Col.FrameBgHovered]= imgui.ImVec4(0.10,0.20,0.35,1)
+
+    c[imgui.Col.Header]        = imgui.ImVec4(0.00,0.45,0.90,1)
+    c[imgui.Col.HeaderHovered] = imgui.ImVec4(0.00,0.70,1.00,1)
+
+    c[imgui.Col.Border]        = imgui.ImVec4(0.20,0.15,0.40,0.8)
+end
+
+local function drawToggle(label, state, anim)
+    local draw = imgui.GetWindowDrawList()
+    local p = imgui.GetCursorScreenPos()
+
+    local W, H = 46, 22
+    local R = H * 0.5
+
+    local t = anim[0]
+
+local colOff = imgui.ImVec4(0.10, 0.16, 0.26, 1)
+local colOn  = imgui.ImVec4(0.00, 0.80, 1.00, 1)
+
+    local track = imgui.ImVec4(
+        colOff.x + (colOn.x - colOff.x) * t,
+        colOff.y + (colOn.y - colOff.y) * t,
+        colOff.z + (colOn.z - colOff.z) * t,
+        1
+    )
+
+    draw:AddRectFilled(p, imgui.ImVec2(p.x + W, p.y + H),
+        imgui.ColorConvertFloat4ToU32(track), R)
+
+    local knobX = p.x + R + (t * (W - H))
+    draw:AddCircleFilled(
+        imgui.ImVec2(knobX, p.y + R),
+        R - 2,
+        imgui.ColorConvertFloat4ToU32(imgui.ImVec4(1,1,1,1))
+    )
+
+    draw:AddText(
+        imgui.ImVec2(p.x + W + 10, p.y + 3),
+        imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0.95,0.92,1,1)),
+        label
+    )
+
+    imgui.SetCursorScreenPos(p)
+    imgui.InvisibleButton(label, imgui.ImVec2(W + 120, H))
+
+    local clicked = imgui.IsItemClicked()
+
+    imgui.SetCursorScreenPos(imgui.ImVec2(p.x, p.y + H + 5))
+
+    return clicked
+end
+
+local function getColor(v)
+    v = tonumber(v) or 0
+
+    if v < 20 then
+        return imgui.ImVec4(1.0, 0.2, 0.2, 1.0)
+    elseif v < 50 then
+        return imgui.ImVec4(1.0, 0.7, 0.2, 1.0)
+    else
+        return imgui.ImVec4(0.2, 1.0, 0.5, 1.0)
+    end
+end
+
+local color = getColor(v)
+
+local function updateAnim(anim, state)
+    local speed = 0.15
+    if state then
+        anim[0] = anim[0] + speed
+        if anim[0] > 1 then anim[0] = 1 end
+    else
+        anim[0] = anim[0] - speed
+        if anim[0] < 0 then anim[0] = 0 end
+    end
+end
+
+local function drawBar(label, value)
+    local v = math.max(0, math.min(value, 100))
+    local color = getColor(v)
+
+    imgui.TextColored(color, label)
+
+    imgui.PushStyleColor(imgui.Col.PlotHistogram, color)
+    imgui.ProgressBar(v / 100, imgui.ImVec2(-1, 10), "")
+    imgui.PopStyleColor()
+
+    local p_min = imgui.GetItemRectMin()
+    local p_max = imgui.GetItemRectMax()
+
+    local text = tostring(v) .. "%"
+    local textSize = imgui.CalcTextSize(text)
+
+    local draw = imgui.GetWindowDrawList()
+
+    local center = imgui.ImVec2(
+        (p_min.x + p_max.x) / 2 - textSize.x / 2,
+        (p_min.y + p_max.y) / 2 - textSize.y / 2
+    )
+
+local draw = imgui.GetWindowDrawList()
+
+local outline = imgui.ColorConvertFloat4ToU32(imgui.ImVec4(0, 0, 0, 1))
+local white = imgui.ColorConvertFloat4ToU32(imgui.ImVec4(1, 1, 1, 1))
+
+draw:AddText(imgui.ImVec2(center.x - 1, center.y), outline, text)
+draw:AddText(imgui.ImVec2(center.x + 1, center.y), outline, text)
+draw:AddText(imgui.ImVec2(center.x, center.y - 1), outline, text)
+draw:AddText(imgui.ImVec2(center.x, center.y + 1), outline, text)
+
+draw:AddText(imgui.ImVec2(center.x - 1, center.y - 1), outline, text)
+draw:AddText(imgui.ImVec2(center.x + 1, center.y - 1), outline, text)
+draw:AddText(imgui.ImVec2(center.x - 1, center.y + 1), outline, text)
+draw:AddText(imgui.ImVec2(center.x + 1, center.y + 1), outline, text)
+
+draw:AddText(center, white, text)
+end
+
+local function drawNeedBars()
+    local h = tonumber(hunger) or 0
+    local t = tonumber(thirst) or 0
+    local s = tonumber(candy) or 0
+    local b = tonumber(bladder) or 0
+
+    drawBar("Lapar", h)
+    drawBar("Haus", t)
+    drawBar("Stres", s)
+    drawBar("Kencing", b)
+end
+
+imgui.OnFrame(
+function()
+    return window ~= nil and window[0]
+end,
+function()
+
+imgui.SetNextWindowSize(imgui.ImVec2(500, 730))
+imgui.Begin(" SION AUTO JOB SUSU CPRP V3", window, imgui.WindowFlags.NoResize)
+
+updateAnim(needAnim, enableNeedSystem[0])
+updateAnim(collisionAnim, noCollision[0])
+updateAnim(animPlayer, noPlayerCollision[0])
+updateAnim(vehAnim, noVehicleCollision[0])
+updateAnim(animAntiAnim, antiAnimToggle[0])
+
+imgui.Text("Susu Terkumpul:")
+imgui.SameLine(0, 1)
+imgui.TextColored(imgui.ImVec4(1, 1, 1, 1), tostring(susuCount[0]))
+
+imgui.SameLine(300)
+
+imgui.Text("Total Penghasilan:")
+imgui.SameLine(0, 1)
+imgui.TextColored(imgui.ImVec4(0.2, 0.9, 0.2, 1), "$" .. tostring(moneyEarned[0]))
+
+imgui.Text("Susu Diolah:")
+imgui.SameLine(0, 1)
+imgui.TextColored(imgui.ImVec4(1, 1, 1, 1), tostring(processedMilkCount[0]))
+
+imgui.SameLine(300)
+
+imgui.Text("Cooldown Job:")
+imgui.SameLine(0, 1)
+local cooldownText = "Tidak Ada"
+
+if cooldownActive then
+
+    local remain =
+        cooldownEndTime - os.time()
+
+    if remain < 0 then
+        remain = 0
+    end
+
+    local minutes =
+        math.floor(remain / 60)
+
+    local seconds =
+        remain % 60
+
+    cooldownText =
+        string.format("%02d:%02d",
+        minutes,
+        seconds)
+end
+
+imgui.TextColored(
+    imgui.ImVec4(1, 1, 1, 1),
+    cooldownText
+)
+
+imgui.Dummy(imgui.ImVec2(0, 10))
+drawNeedBars()
+imgui.Dummy(imgui.ImVec2(0, 10))
+
+local phaseText = ""
+
+if inDelay then
+    phaseText = "Tunggu Delay Job"
+elseif scriptEnabled[0] then
+    phaseText = phaseName[phase[0]] or "Tidak Aktif"
+else
+    phaseText = "Tidak Aktif"
+end
+
+local preview = phaseName[selectedPhase[0]] or "Pilih Fase"
+imgui.SetNextItemWidth(-1)
+if imgui.BeginCombo("##phasecombo", preview) then
+    for i = 1, 6 do
+        if phaseName[i] then
+            local selected = (selectedPhase[0] == i)
+
+            if imgui.Selectable(phaseName[i], selected) then
+                selectedPhase[0] = i
+                phase[0] = i
+                phaseBusy = false
+            end
+
+            if selected then
+                imgui.SetItemDefaultFocus()
+            end
+        end
+    end
+    imgui.EndCombo()
+end
+
+imgui.TextColored(imgui.ImVec4(0.00, 0.75, 1.00, 1), "FASE :")
+imgui.SameLine(0, 2)
+imgui.TextColored(imgui.ImVec4(0.00, 0.75, 1.00, 1), phaseText)
+
+    if scriptEnabled[0] then
+        imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.8,0.1,0.1,1))
+    imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(1,0.2,0.2,1))
+    imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.6,0.05,0.05,1))
+    if imgui.Button("STOP", imgui.ImVec2(-1,40)) then
+
+scriptEnabled[0] = false
+if walkMode[0] == 1 then
+    walkMode[0] = 0
+    sampProcessChatInput("/djwosineakejsnakdknznsndjskskdjajsdjjsksjdjsjejxjsjfnnxakskzpakwnsnakqkskskkapqosjsndjsjsj")
+end
+phase[0] = 0
+autoWalkEnabled = false
+enableNeedSystem[0] = false
+noCollision[0] = false
+noVehicleCollision[0] = false
+noPlayerCollision[0] = false
+antiAnimToggle[0] = false
+hunger = 0
+thirst = 0
+bladder = 0
+candy = 0
+cooldownActive = false
+cooldownEndTime = 0
+restoreNoCollision()
+resetNeedSystem()
+setGameKeyState(1, 0)
+
+end
+imgui.PopStyleColor(3)
+    else
+if imgui.Button("START", imgui.ImVec2(-1,40)) then
+
+    scriptEnabled[0] = true
+if walkMode[0] == 1 then
+    sampProcessChatInput("/djwosineakejsnakdknznsndjskskdjajsdjjsksjdjsjejxjsjfnnxakskzpakwnsnakqkskskkapqosjsndjsjsj")
+end
+    
+    if selectedPhase[0] == 0 then
+    phase[0] = 1
+else
+    phase[0] = selectedPhase[0]
+end
+
+if phase[0] == 1 then
+lua_thread.create(function()
+    wait(500)
+    sendOtotY()
+end)
+
+elseif phase[0] == 2 then
+    loadWaypoints("Olah Susu")
+    autoWalkEnabled = true
+
+elseif phase[0] == 3 then
+lua_thread.create(function()
+    wait(500)
+    sendOtotY()
+end)
+
+elseif phase[0] == 4 then
+    loadWaypoints("Jual Susu")
+    autoWalkEnabled = true
+
+elseif phase[0] == 5 then
+lua_thread.create(function()
+    wait(500)
+    sendOtotY()
+end)
+
+elseif phase[0] == 6 then
+    loadWaypoints("Balik Ke Sapi")
+    autoWalkEnabled = true
+      end
+   end
+end
+
+    imgui.Text("Pilih Mode Jalan:")
+if RadioButton("Jalan Biasa", 0, walkMode[0]) then
+    walkMode[0] = 0
+    if scriptEnabled[0] then
+    sampProcessChatInput("/djwosineakejsnakdknznsndjskskdjajsdjjsksjdjsjejxjsjfnnxakskzpakwnsnakqkskskkapqosjsndjsjsj")
+    end
+end
+
+imgui.SameLine()
+
+if RadioButton("Lari", 1, walkMode[0]) then
+    walkMode[0] = 1
+    if scriptEnabled[0] then
+    sampProcessChatInput("/djwosineakejsnakdknznsndjskskdjajsdjjsksjdjsjejxjsjfnnxakskzpakwnsnakqkskskkapqosjsndjsjsj")
+    end
+end
+    
+imgui.Separator()
+imgui.TextColored(imgui.ImVec4(0.0, 0.75, 1.0, 1), "BYPASS MENU")
+imgui.Separator()
+
+local startX = imgui.GetCursorPosX()
+local startY = imgui.GetCursorPosY()
+
+if drawToggle("Auto Makan Minum DLL", enableNeedSystem[0], needAnim) then
+    enableNeedSystem[0] = not enableNeedSystem[0]
+    if not enableNeedSystem[0] then
+        resetNeedSystem()
+    end
+end
+
+imgui.SetCursorPos(imgui.ImVec2(startX + 250, startY))
+if drawToggle("Tembus Object", noCollision[0], collisionAnim) then
+   noCollision[0] = not noCollision[0]
+end
+
+imgui.SetCursorPos(imgui.ImVec2(startX, startY + 35))
+if drawToggle("Tembus Player", noPlayerCollision[0], animPlayer) then
+    noPlayerCollision[0] = not noPlayerCollision[0]
+end
+
+imgui.SetCursorPos(imgui.ImVec2(startX + 250, startY + 35))
+if drawToggle("Tembus Kendaraan", noVehicleCollision[0], vehAnim) then
+noVehicleCollision[0] = not noVehicleCollision[0]
+end
+
+imgui.SetCursorPos(imgui.ImVec2(startX, startY + 70))
+if drawToggle("Anti Anim (From Yasid)", antiAnimToggle[0], animAntiAnim) then
+    antiAnimToggle[0] = not antiAnimToggle[0]
+end
+
+imgui.Dummy(imgui.ImVec2(0, 20))
+
+local fullW = imgui.GetContentRegionAvail().x
+
+local btnW = (fullW - 8) * 0.5
+local btnH = 32
+
+imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.8,0.1,0.1,1))
+imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(1,0.2,0.2,1))
+imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.6,0.05,0.05,1))
+
+if imgui.Button(" YouTube", imgui.ImVec2(btnW, btnH)) then
+    openLink(URL_YT)
+end
+
+imgui.PopStyleColor(3)
+
+imgui.SameLine()
+
+imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.05,0.05,0.05,1))
+imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.12,0.12,0.12,1))
+imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.01,0.01,0.01,1))
+
+if imgui.Button(" TikTok", imgui.ImVec2(btnW, btnH)) then
+    openLink(URL_TIKTOK)
+end
+
+imgui.PopStyleColor(3)
+
+local centerPos = (fullW - btnW) * 0.5
+imgui.SetCursorPosX(centerPos)
+
+imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.145, 0.827, 0.400, 1.0))
+imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.20, 0.90, 0.48, 1.0))
+imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.10, 0.70, 0.32, 1.0))
+
+if imgui.Button(" Saluran WA", imgui.ImVec2(btnW, btnH)) then
+    openLink(URL_WA)
+end
+
+imgui.PopStyleColor(3)
+
+    imgui.End()
+end)
+
+function sampev.onServerMessage(color, text)
+    text = text:gsub("{%x%x%x%x%x%x}", "")
+
+    if not scriptEnabled or not scriptEnabled[0] then
+        return
+    end
+
+    if text:find("You obtained 1 raw milk") then
+
+        susuCount[0] = susuCount[0] + 1
+
+            lua_thread.create(function()
+                wait(500)
+                    sendOtotY()
+        end)
+    end
+
+    if text:find("raw milk is at capacity") then
+if not inDelay then
+    setPhase(2)
+end
+        if loadWaypoints("Olah Susu") then
+            autoWalkEnabled = true
+        end
+    end
+
+    if text:find("You successfully obtained 1 processed milk item") then
+
+        processedMilkCount[0] = processedMilkCount[0] + 1
+
+            lua_thread.create(function()
+                wait(500)
+                    sendOtotY()
+        end)
+    end
+
+    if text:find("You need 5 raw milk")
+    or text:find("Your processed milk is at capacity") then
+if not inDelay then
+    setPhase(4)
+end
+        if loadWaypoints("Jual Susu") then
+            autoWalkEnabled = true
+        end
+    end
+
+if text:find("You received") and text:find("processed milk") then
+    moneyEarned[0] = moneyEarned[0] + 1500
+
+    lua_thread.create(function()
+        wait(500)
+        sendOtotY()
+    end)
+end
+
+    if text:find("You don't have enough processed milk") then
+if not inDelay then
+    setPhase(6)
+end
+        if loadWaypoints("Balik Ke Sapi") then
+            autoWalkEnabled = true
+        end
+    end
+
+    if text:find("You must wait") and text:find("minutes before doing this job again") then
+    inDelay = true
+        local minutes = tonumber(text:match("wait (%d+) more minutes"))
+
+        if minutes then
+            cooldownEndTime = os.time() + (minutes <= 0 and 60 or minutes * 60)
+            cooldownActive = true
+        end
+    end
+end
+
+function main()
+    repeat wait(0) until isSampAvailable()
+   
+ imgui.OnInitialize(function()
+    applyTheme()
+end)
+
+    sampRegisterChatCommand("sionasusu", function()
+        window[0] = not window[0]
+    end)
+
+lua_thread.create(function()
+    wait(5000)
+    sampAddChatMessage("{39C0FF}[Sion Auto Job Susu CPRP V3] {FFFFFF}Loaded, ketik {39C0FF}/sionasusu {FFFFFF}buat buka UI.", -1)
+end)
+
+    repeat wait(0) until sampIsLocalPlayerSpawned()
+
+    lua_thread.create(function()
+    while true do
+        wait(0)
+
+        if scriptEnabled[0] then
+            updateAutoWalk()
+        end
+    end
+end)
+
+lua_thread.create(function()
+    while true do
+        wait(0)
+
+        if scriptEnabled[0] and enableNeedSystem[0] then
+            handleNeeds()
+        end
+    end
+end)
+
+lua_thread.create(function()
+    while true do
+        wait(0)
+
+        if scriptEnabled[0] then
+            handleObjectCollision()
+            handleVehicleCollision()
+            handlePlayers()
+        end
+    end
+end)
+
+lua_thread.create(function()
+    while true do
+        wait(500)
+
+if cooldownActive then
+    if os.time() >= cooldownEndTime then
+        cooldownActive = false
+        inDelay = false
+
+        setPhase(1)
+        sendOtotY()
+                end
+            end
+        end
+    end)
+end
