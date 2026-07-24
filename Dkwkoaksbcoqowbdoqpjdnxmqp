@@ -393,29 +393,6 @@ function restorePlayersCollision()
     end
 end
 
-local walkIndex = 1
-local walkTick = 0
-local turning = false
-local turnDir = 0
-local turnTimer = 0
-local TURN_TIME = 350
-local TURN_ANGLE = 25
-
-
-function getAngleDiff(a, b)
-    local diff = a - b
-
-    while diff > 180 do
-        diff = diff - 360
-    end
-
-    while diff < -180 do
-        diff = diff + 360
-    end
-
-    return diff
-end
-
 local function RadioButton(label, value, selected)
     local radius = 6
 
@@ -439,138 +416,51 @@ local function RadioButton(label, value, selected)
     return clicked
 end
 
-function startTurn(prev, current, next)
-
-    local dir1 = getHeadingFromVector2d(
-        current[1] - prev[1],
-        current[2] - prev[2]
-    )
-
-    local dir2 = getHeadingFromVector2d(
-        next[1] - current[1],
-        next[2] - current[2]
-    )
-
-    local diff = getAngleDiff(dir2, dir1)
-
-    if math.abs(diff) > TURN_ANGLE then
-
-        turning = true
-        turnTimer = os.clock() * 1000 + TURN_TIME
-
-        if diff > 0 then
-            turnDir = -255
-        else
-            turnDir = 255
-        end
-
-    end
-end
-
 function updateAutoWalk()
 
     if not autoWalkEnabled or not isWalkPhase() then
         autoWalkEnabled = false
-        setGameKeyState(1,0)
-        setGameKeyState(16,0)
-        setGameKeyState(0,0)
-        return
-    end
-
-    if #walkCoordinates == 0 then
-        autoWalkEnabled = false
-        setGameKeyState(1,0)
-        setGameKeyState(16,0)
-        setGameKeyState(0,0)
+        setGameKeyState(1, 0)
         return
     end
 
     local point = walkCoordinates[walkIndex]
-
     if not point then
         autoWalkEnabled = false
-
-        setGameKeyState(1,0)
-        setGameKeyState(16,0)
-        setGameKeyState(0,0)
-
+        setGameKeyState(1, 0)
         walkIndex = 1
         return
     end
 
     local px, py, pz = getCharCoordinates(PLAYER_PED)
+    local tx, ty, tz = point[1], point[2], point[3]
 
-    local dist = getDistanceBetweenCoords3d(
-        px, py, pz,
-        point[1],
-        point[2],
-        point[3]
-    )
+    local dist = getDistanceBetweenCoords3d(px, py, pz, tx, ty, tz)
 
-    if turning then
-
-        setGameKeyState(1,-128)
-        setGameKeyState(16,255)
-        setGameKeyState(0,turnDir)
-
-        if os.clock()*1000 >= turnTimer then
-            turning = false
-            turnDir = 0
-            setGameKeyState(0,0)
-        end
-
-        return
-    end
-
-    local heading = getHeadingFromVector2d(
-        point[1]-px,
-        point[2]-py
-    )
-
-    setCharHeading(PLAYER_PED, heading)
-
+    setCharHeading(PLAYER_PED, getHeadingFromVector2d(tx - px, ty - py))
     setGameKeyState(1,-128)
-    setGameKeyState(16,255)
 
-    if dist <= 0.8 then
-
-        local oldIndex = walkIndex
-
+    if dist < 1.0 then
         walkIndex = walkIndex + 1
 
-        if walkIndex > #walkCoordinates then
+if walkIndex > #walkCoordinates then
+    autoWalkEnabled = false
+    setGameKeyState(1, 0)
+    walkIndex = 1
 
-            autoWalkEnabled = false
+    if phase[0] == 2 then
+        setPhase(3)
 
-            setGameKeyState(1,0)
-            setGameKeyState(16,0)
-            setGameKeyState(0,0)
+    elseif phase[0] == 4 then
+        setPhase(1)
 
-            walkIndex = 1
+    elseif phase[0] == 5 then
+        setPhase(6)
 
-            if phase[0] == 2 then
-                setPhase(3)
-
-            elseif phase[0] == 4 then
-                setPhase(1)
-
-            elseif phase[0] == 5 then
-                setPhase(6)
-
-            elseif phase[0] == 7 then
-                setPhase(1)
-            end
-
-            return
-        end
-
-        local prev = walkCoordinates[oldIndex]
-        local current = walkCoordinates[walkIndex]
-        local nextPoint = walkCoordinates[walkIndex + 1]
-
-        if prev and current and nextPoint then
-            startTurn(prev, current, nextPoint)
-        end
+    elseif phase[0] == 7 then
+        setPhase(1)
+          end
+       end
     end
 end
 
