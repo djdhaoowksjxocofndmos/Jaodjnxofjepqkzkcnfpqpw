@@ -80,10 +80,10 @@ local function isWalkPhase()
 end
 
 local PATHS = {
-    [2] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V2/Lebur Ore.json",
-    [4] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V2/Ambil Ore.json",
-    [5] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V2/Jual Ore.json",
-    [7] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V2/Balik Ambil Ore.json"
+    [2] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V3/Lebur Ore.json",
+    [4] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V3/Ambil Ore.json",
+    [5] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V3/Jual Ore.json",
+    [7] = getWorkingDirectory() .. "/Sion Auto Job Ore CPRP V3/Balik Ambil Ore.json"
 }
     
 local function setWalk(state)
