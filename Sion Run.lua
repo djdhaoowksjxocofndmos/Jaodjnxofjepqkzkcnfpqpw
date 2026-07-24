@@ -1,0 +1,60 @@
+script_name("Sion Run")
+script_author("Sion")
+
+require "lib.moonloader"
+
+local ffi = require("ffi")
+local GTASA = ffi.load("GTASA")
+local monethook = require("lib.monethook")
+
+ffi.cdef[[
+    bool _ZN4CPad9GetSprintEi(void* this, void* ped, bool bol);
+]]
+
+local hookEnabled = false
+local sprintHook = nil
+
+local function GetSprintHook(this, ped, bol)
+    return true
+end
+
+local function enableHook()
+    if hookEnabled then return end
+
+    local addr = tonumber(ffi.cast("uintptr_t", GTASA._ZN4CPad9GetSprintEi))
+
+    sprintHook = monethook.new(
+        "bool(__thiscall*)(void*, void*, bool)",
+        GetSprintHook,
+        addr
+    )
+
+    hookEnabled = true
+end
+
+local function disableHook()
+    if not hookEnabled then return end
+
+    if sprintHook then
+        sprintHook.stop()
+        sprintHook = nil
+    end
+
+    hookEnabled = false
+end
+
+function main()
+    while not isSampAvailable() do
+        wait(100)
+    end
+
+    sampRegisterChatCommand("djwosineakejsnakdknznsndjskskdjajsdjjsksjdjsjejxjsjfnnxakskzpakwnsnakqkskskkapqosjsndjsjsj", function()
+        if hookEnabled then
+            disableHook()
+            sampAddChatMessage("{39C0FF}[Sion]{FFFFFF} Mode Jalan Biasa.", -1)
+        else
+            enableHook()
+            sampAddChatMessage("{39C0FF}[Sion]{FFFFFF} Mode Lari.", -1)
+        end
+    end)
+end
