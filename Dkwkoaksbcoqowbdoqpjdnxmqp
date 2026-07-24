@@ -532,7 +532,7 @@ function updateAutoWalk()
     setGameKeyState(1,-128)
     setGameKeyState(16,255)
 
-    if dist <= 1.0 then
+    if dist <= 0.8 then
 
         local oldIndex = walkIndex
 
