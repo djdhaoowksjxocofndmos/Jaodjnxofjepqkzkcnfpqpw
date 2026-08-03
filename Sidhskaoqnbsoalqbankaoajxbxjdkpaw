@@ -306,6 +306,7 @@ for col = 0,columnCount-1 do
     imgui.EndGroup()
 end
 
+imgui.Separator()
 if selectedTree then
     if imgui.Button("MATIKAN LINE",imgui.ImVec2(-1,40)) then
         selectedTree=nil
