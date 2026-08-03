@@ -202,10 +202,6 @@ imgui.Begin(title, window, imgui.WindowFlags.AlwaysAutoResize+ imgui.WindowFlags
     if imgui.Button("SCAN POHON", imgui.ImVec2(-1,40)) then
         scanTrees()
     end
-    
-    if imgui.Button("MATIKAN LINE", imgui.ImVec2(-1,40)) then
-    selectedTree = nil
-end
 
  imgui.Separator()
 
@@ -309,6 +305,13 @@ for col = 0,columnCount-1 do
     end
     imgui.EndGroup()
 end
+
+if selectedTree then
+    if imgui.Button("MATIKAN LINE",imgui.ImVec2(-1,40)) then
+        selectedTree=nil
+    end
+end
+
     imgui.End()
 end)
 
