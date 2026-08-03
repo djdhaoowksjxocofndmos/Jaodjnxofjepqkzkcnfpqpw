@@ -7,9 +7,8 @@ local imgui = require "mimgui"
 
 local font = renderCreateFont("Arial", 12, 5)
 local window = imgui.new.bool(false)
-
 local ore = {}
-local selectedTree = nil
+local selectedOre = nil
 
 function scanOre()
     ore = {}
@@ -146,7 +145,7 @@ renderFontDrawText(font, line2, tx - w2/2, ty + 15, 0xFF00BFFF)
 end
 
 function drawOreLine()
-    if not selectedTree then
+    if not selectedOre then
         return
     end
 
@@ -156,9 +155,9 @@ function drawOreLine()
         px,
         py,
         pz,
-        selectedTree.x,
-        selectedTree.y,
-        selectedTree.z,
+        selectedOre.x,
+        selectedOre.y,
+        selectedOre.z,
         25,
         0xFF00BFFF
     )
@@ -202,6 +201,10 @@ imgui.Begin(title, window, imgui.WindowFlags.AlwaysAutoResize+ imgui.WindowFlags
     if imgui.Button("SCAN ORE", imgui.ImVec2(-1,40)) then
         scanOre()
     end
+    
+if imgui.Button("MATIKAN LINE", imgui.ImVec2(-1,40)) then
+    selectedOre = nil
+end
 
  imgui.Separator()
 
@@ -252,7 +255,7 @@ for col=0,columnCount-1 do
             local size3=imgui.CalcTextSize(line3)
 
 if imgui.Button("##"..index,imgui.ImVec2(buttonWidth,buttonHeight)) then
-    selectedTree = v
+    selectedOre = v
 end
 
             local pos=imgui.GetItemRectMin()
