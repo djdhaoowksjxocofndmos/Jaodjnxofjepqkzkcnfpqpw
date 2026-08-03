@@ -202,10 +202,6 @@ imgui.Begin(title, window, imgui.WindowFlags.AlwaysAutoResize+ imgui.WindowFlags
         scanOre()
     end
     
-if imgui.Button("MATIKAN LINE", imgui.ImVec2(-1,40)) then
-    selectedOre = nil
-end
-
  imgui.Separator()
 
 local buttonWidth=200
@@ -288,6 +284,14 @@ imgui.SetCursorScreenPos(
 
     imgui.EndGroup()
 end
+
+if selectedOre then
+imgui.Separator()
+    if imgui.Button("MATIKAN LINE",imgui.ImVec2(-1,40)) then
+        selectedOre=nil
+    end
+end
+
     imgui.End()
 end)
 
