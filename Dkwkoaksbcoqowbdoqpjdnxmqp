@@ -228,10 +228,10 @@ local function getValue(id)
 end
 
 local function updateHud()
-    hunger = getValue(2095)
-    thirst = getValue(2096)
-    candy  = getValue(2099)
-    bladder = getValue(2097)
+    hunger = getValue(2159)
+    thirst = getValue(2160)
+    candy  = getValue(2163)
+    bladder = getValue(2161)
 end
 
 function sampev.onShowTextDraw(id, data)
