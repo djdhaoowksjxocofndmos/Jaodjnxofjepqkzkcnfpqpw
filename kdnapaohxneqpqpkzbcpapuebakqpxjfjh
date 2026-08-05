@@ -192,10 +192,10 @@ local function getHudTextdrawValue(id)
 end
 
 local function updateHud()
-    hunger = getHudTextdrawValue(2095)
-    thirst = getHudTextdrawValue(2096)
-    bladder = getHudTextdrawValue(2097)
-    candy  = getHudTextdrawValue(2099)
+    hunger = getHudTextdrawValue(2159)
+    thirst = getHudTextdrawValue(2160)
+    bladder = getHudTextdrawValue(2161)
+    candy  = getHudTextdrawValue(2163)
 end
 
 local function handleNeeds()
